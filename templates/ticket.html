@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Your Confirmed Ticket</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen flex items-center justify-center p-6">
+    <div class="max-w-md w-full bg-gray-900 border border-gray-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+        <div class="absolute -top-12 -right-12 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl"></div>
+
+        <div class="text-center mb-6">
+            <span class="bg-emerald-500/20 text-emerald-400 text-xs px-3 py-1 rounded-full border border-emerald-500/30 font-bold uppercase tracking-wider">
+                ✓ Confirmed Pass
+            </span>
+            <h1 class="text-2xl font-black mt-3 text-white">{{ ticket.event_title }}</h1>
+            <p class="text-gray-400 text-sm">{{ ticket.venue_name }}</p>
+        </div>
+
+        <div class="bg-gray-800 border border-gray-700/60 rounded-2xl p-5 mb-6 space-y-4">
+            <div class="flex justify-between border-b border-gray-700 pb-3">
+                <span class="text-xs text-gray-400">Attendee</span>
+                <span class="text-sm font-bold text-white">{{ ticket.customer_name }}</span>
+            </div>
+            <div class="flex justify-between border-b border-gray-700 pb-3">
+                <span class="text-xs text-gray-400">Seat Code</span>
+                <span class="text-xl font-black text-indigo-400">{{ ticket.seat_code }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-xs text-gray-400">Price Paid</span>
+                <span class="text-sm font-bold text-emerald-400">${{ ticket.price }}</span>
+            </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl text-center text-gray-900 mb-6">
+            <p class="text-[10px] font-mono tracking-widest text-gray-500 uppercase">Verification Security Token</p>
+            <p class="text-xs font-mono font-bold break-all mt-1">{{ ticket.ticket_token }}</p>
+        </div>
+
+        <a href="/" class="block text-center w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl text-sm transition">
+            Back to Home Portal
+        </a>
+    </div>
+</body>
+</html>

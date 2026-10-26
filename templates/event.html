@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ event.title }} | Live Seat Map</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .seat-btn:disabled { cursor: not-allowed; opacity: 0.6; }
+    </style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen p-6">
+    <div class="max-w-5xl mx-auto">
+        <header class="mb-8">
+            <a href="/" class="text-indigo-400 text-sm font-semibold hover:underline">← Back to Portal</a>
+            <h1 class="text-3xl font-black mt-2 text-white">{{ event.title }}</h1>
+            <p class="text-gray-400">{{ event.venue_name }} | Organized by <span class="text-indigo-400 font-semibold">{{ event.tenant_name }}</span></p>
+        </header>
+
+        <!-- Seat Legend -->
+        <div class="flex items-center gap-6 mb-8 bg-gray-900 border border-gray-800 p-4 rounded-xl">
+            <div class="flex items-center gap-2"><div class="w-4 h-4 bg-emerald-500 rounded"></div><span class="text-xs text-gray-300">Available</span></div>
+            <div class="flex items-center gap-2"><div class="w-4 h-4 bg-amber-500 rounded animate-pulse"></div><span class="text-xs text-gray-300">Held (Redis TTL Lock)</span></div>
+            <div class="flex items-center gap-2"><div class="w-4 h-4 bg-rose-600 rounded"></div><span class="text-xs text-gray-300">Confirmed Sold</span></div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- The Seat Grid -->
+            <div class="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-2xl">
+                <div class="w-full text-center py-2 bg-gray-800 border border-gray-700 text-gray-400 text-xs font-bold rounded-lg mb-8 uppercase tracking-widest">
+                    STAGE / STADIUM PITCH / COCKPIT
+                </div>
+
+                {% if not seats %}
+                <div class="text-center py-12">
+                    <p class="text-gray-400 mb-4">No seats have been generated for this event yet.</p>
+                    <a href="/" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold">Go to Admin to Generate Seats</a>
+                </div>
+                {% else %}
+                <div class="grid grid-cols-5 sm:grid-cols-10 gap-2.5">
+                    {% for seat in seats %}
+                    <button 
+                        id="seat-btn-{{ seat.id }}"
+                        onclick="reserveSeat({{ seat.id }}, '{{ seat.seat_code }}', {{ seat.price }})"
+                        {% if seat.status != 'AVAILABLE' %}disabled{% endif %}
+                        class="seat-btn py-3 rounded-lg text-xs font-bold flex flex-col items-center justify-center transition transform active:scale-95
+                        {% if seat.status == 'AVAILABLE' %} bg-emerald-600 hover:bg-emerald-500 text-white
+                        {% elif seat.status == 'RESERVED' %} bg-amber-500 text-gray-950 font-black
+                        {% elif seat.status == 'SOLD' %} bg-rose-900/50 text-rose-400 border border-rose-800/50
+                        {% endif %}">
+                        <span>{{ seat.seat_code }}</span>
+                        <span class="text-[10px] opacity-80">${{ seat.price|int }}</span>
+                    </button>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Checkout Panel -->
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 flex flex-col justify-between">
+                <div>
+                    <h2 class="text-lg font-bold mb-4 text-white">Your Cart Reservation</h2>
+                    
+                    <div id="selection-box" class="hidden space-y-4">
+                        <div class="bg-gray-800 p-4 rounded-xl border border-gray-700">
+                            <p class="text-xs text-gray-400">Selected Seat</p>
+                            <p id="cart-seat-code" class="text-2xl font-black text-indigo-400">--</p>
+                            <p id="cart-price" class="text-sm font-bold text-gray-200 mt-1">$--</p>
+                        </div>
+
+                        <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-amber-300">
+                            <p class="text-xs font-bold uppercase tracking-wider">Redis Hold Lock Active</p>
+                            <p class="text-2xl font-black mt-1" id="timer-display">02:00</p>
+                            <p class="text-xs text-amber-400/80 mt-1">Complete payment before timer expires or seat will be released!</p>
+                        </div>
+
+                        <form id="payment-form" onsubmit="confirmPurchase(event)" class="space-y-3 pt-4 border-t border-gray-800">
+                            <div>
+                                <label class="text-xs text-gray-400">Your Full Name</label>
+                                <input type="text" id="cust-name" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-400">Email Address</label>
+                                <input type="email" id="cust-email" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                            </div>
+                            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-lg text-sm transition">
+                                Pay & Confirm Ticket
+                            </button>
+                        </form>
+                    </div>
+
+                    <div id="empty-cart-msg" class="text-center py-12 text-gray-500 text-sm">
+                        Click on any available green seat to start your 2-minute hold.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedSeatId = null;
+        let countdownInterval = null;
+
+        async function reserveSeat(seatId, seatCode, price) {
+            const userName = "Guest_" + Math.floor(Math.random() * 9000 + 1000);
+            
+            // Call API to acquire Redis lock for 120 seconds
+            const response = await fetch(`/api/reserve-seat/${seatId}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_name: userName, ttl_seconds: 120 })
+            });
+
+            const data = await response.json();
+
+            if (data.status !== "success") {
+                alert(data.message);
+                return;
+            }
+
+            // Lock acquired! Update UI
+            selectedSeatId = seatId;
+            document.getElementById("empty-cart-msg").classList.add("hidden");
+            document.getElementById("selection-box").classList.remove("hidden");
+            document.getElementById("cart-seat-code").innerText = seatCode;
+            document.getElementById("cart-price").innerText = "$" + price;
+            
+            // Mark button yellow
+            const btn = document.getElementById("seat-btn-" + seatId);
+            btn.className = "seat-btn py-3 rounded-lg text-xs font-black flex flex-col items-center justify-center bg-amber-500 text-gray-950";
+
+            startCountdown(120);
+        }
+
+        function startCountdown(seconds) {
+            if (countdownInterval) clearInterval(countdownInterval);
+            let timeLeft = seconds;
+
+            countdownInterval = setInterval(() => {
+                const mins = Math.floor(timeLeft / 60);
+                const secs = timeLeft % 60;
+                document.getElementById("timer-display").innerText = 
+                    (mins < 10 ? "0" : "") + mins + ":" + (secs < 10 ? "0" : "") + secs;
+
+                if (timeLeft <= 0) {
+                    clearInterval(countdownInterval);
+                    alert("Your 2-minute reservation expired! Seat released.");
+                    window.location.reload();
+                }
+                timeLeft--;
+            }, 1000);
+        }
+
+        async function confirmPurchase(e) {
+            e.preventDefault();
+            const name = document.getElementById("cust-name").value;
+            const email = document.getElementById("cust-email").value;
+
+            const response = await fetch(`/api/confirm-payment/${selectedSeatId}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ customer_name: name, customer_email: email })
+            });
+
+            const data = await response.json();
+            if (data.status === "success") {
+                window.location.href = `/ticket/${data.ticket_token}`;
+            } else {
+                alert("Payment Failed: " + data.message);
+                window.location.reload();
+            }
+        }
+    </script>
+</body>
+</html>
