@@ -6,6 +6,18 @@ Built with **FastAPI**, **PostgreSQL 16**, **Redis 7**, **Docker Compose**, and 
 
 ---
 
+## Live Production Proof & Verification
+
+<p align="center">
+  <img src="omni-ticket2.PNG" width="60%" alt="Incognito Live Seat Map with Mutual Exclusion"/>
+  <img src="omni-ticket1.PNG" width="37%" alt="Confirmed Digital Pass with UUID Token"/>
+</p>
+<p align="center">
+  <em>Figure 1: (Left) Cross-session distributed locking proof in an Incognito window showing Seat A1 locked and marked Confirmed Sold, while Seat A10 is held by Redis TTL. (Right) Confirmed attendee pass issued to attendee with cryptographic UUID verification token stored permanently in PostgreSQL.</em>
+</p>
+
+---
+
 ## 1. System Architecture Blueprint
 
 <pre><code>
@@ -70,7 +82,7 @@ During load testing with **50 concurrent virtual users** executing **500 total b
 
 ### Pattern 1: Unprotected Naive Updates (The Anti-Pattern)
 - **Mechanism:** Disconnected `SELECT` followed by `UPDATE`.
-- **Result:** Severe data corruption and overselling under load.
+- **Result:** Severe data corruption and overselling under load (sold 259 tickets for 100 seats).
 - **Verdict:** Unacceptable in any production system.
 
 ### Pattern 2: Pessimistic Locking (`SELECT ... FOR UPDATE`)
@@ -93,6 +105,7 @@ WHERE id = :id AND version = :current_version;</code></pre>
   3. **Auto-Release:** If the buyer abandons the cart, Redis purges the key at `00:00`, instantly making the seat available to other fans without executing database cleanup cron jobs.
 
 ---
+
 ## 4. Multi-Tenant Relational Data Model
 
 Designed with **Pooled Multi-Tenancy** (shared database instance with logical tenant isolation) and database-level defensive invariants:
@@ -156,7 +169,7 @@ Designed with **Pooled Multi-Tenancy** (shared database instance with logical te
 
 ---
 
-## 6. Real-World Live Verification
+## 6. Real-World Live Verification Details
 
 The application was deployed to a remote Google Cloud Platform Linux Virtual Machine and verified across concurrent client sessions:
 
@@ -165,7 +178,7 @@ The application was deployed to a remote Google Cloud Platform Linux Virtual Mac
    - **Tab 2 (Incognito Session / Distinct Client):** Attempting to click `Seat A1` returns HTTP 200 with an explicit conflict message: *"Seat is currently held by someone else!"*. The button is disabled with amber styling.
 2. **Permanent Ledger Handoff:**
    - User completes payment in Tab 1.
-   - Ticket is issued with a cryptographic UUID token (e.g., `9e8b2ff9-33ff-4612-9efd-3a2e1b767359`).
+   - Ticket is issued with a cryptographic UUID token (`9e8b2ff9-33ff-4612-9efd-3a2e1b767359`).
    - Refreshing Tab 2 displays `Seat A1` permanently marked as **Confirmed Sold** (Dark Red).
 
 ---
@@ -181,6 +194,8 @@ omniticket-saas/
 ├── test_naive.js            # k6 load script proving the race condition
 ├── test_pessimistic.js      # k6 load script verifying SELECT FOR UPDATE
 ├── test_optimistic.js       # k6 load script verifying Version CAS
+├── omni-ticket1.PNG         # Live screenshot: Confirmed Digital Pass
+├── omni-ticket2.PNG         # Live screenshot: Incognito Seat Map with active locks
 └── templates/
     ├── admin.html           # Multi-tenant organizer console & seat generator
     ├── event.html           # Interactive SVG/CSS grid seat map with live timers
